@@ -1,0 +1,13 @@
+
+# Core Flask dependencies
+Flask==2.3.3
+Flask-CORS==4.0.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# HTTP client (if needed for API calls)
+requests==2.31.0
+
+# Logging and utilities
+Werkzeug==2.3.7

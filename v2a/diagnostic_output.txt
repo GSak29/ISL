@@ -1,0 +1,24 @@
+=== Voice-to-ISL Diagnostic Tool ===
+
+1. [NET] Checking Internet Connection...
+   [OK] Internet is accessible
+
+2. [FILE] Checking Project Files...
+   [OK] Found Configuration File (.env)
+   [OK] Found Backend Server (app.py)
+   [OK] Found Frontend Interface (index.html)
+   [OK] Found Video Directory (video)
+   [INFO] Video directory contains 66 video files
+
+3. [KEY] Checking API Key...
+   [INFO] Loaded Key: gsk_...Qk91
+   [OK] Key Format looks correct (starts with 'gsk_')
+
+4. [API] Testing Groq API Endpoint...
+   [WAIT] Sending test request to Groq...
+   [FAIL] API Call REJECTED (401 Unauthorized). Check your API Key.
+      Response: {"error":{"message":"Invalid API Key","type":"invalid_request_error","code":"invalid_api_key"}}
+
+
+=== Diagnostic Summary ===
+[FAIL] ISSUES FOUND. Please fix the errors above.
