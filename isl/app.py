@@ -14,7 +14,8 @@ app = Flask(__name__)
 
 # Load environment variables
 # Load environment variables
-load_dotenv()
+# Load environment variables
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
 # Global variables
@@ -117,7 +118,7 @@ def generate_sentence_groq(words):
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant that converts grammatically incorrect or incomplete phrases into full meaningful English sentences. Always enclose your translation in double quotes."},
+            {"role": "system", "content": "You are a helpful assistant that converts given hand-sign word chunks into a single, complete, and grammatically correct English sentence. The input may contain words in an incorrect order (for example: your name father or father name your). You must infer the intended meaning, rearrange the words logically, add missing grammar words and pronouns if needed, and produce a natural, meaningful sentence (for example: What is your father's name?). Always output only the final corrected sentence enclosed in double quotes."},
             {"role": "user", "content": f"Convert this: '{joined}' into a proper English sentence and enclose your answer in double quotes."}
         ],
         "temperature": 0.7
