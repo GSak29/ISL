@@ -491,5 +491,202 @@ def get_grok_key():
             'code': 'MISSING_KEY'
         }), 404
 
+import requests
+import json
+import random
+
+# ... (existing imports are fine)
+
+def get_available_videos():
+    """Get list of available video files (without extension)"""
+    # Updated path to static/video
+    video_dir = os.path.join(os.path.dirname(__file__), 'static', 'video')
+    if not os.path.exists(video_dir):
+        return []
+    
+    videos = []
+    for f in os.listdir(video_dir):
+        if f.lower().endswith(('.mov', '.mp4')):
+            videos.append(os.path.splitext(f)[0])
+            
+    return videos
+
+@app.route('/api/process-text', methods=['POST'])
+@app.route('/api/process-text', methods=['POST'])
+def process_text():
+    """Process text using Groq to map to available ISL videos - Strict Mode"""
+    data = request.json
+    text = data.get('text', '')
+    
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+        
+    if not API_KEY:
+        return jsonify({
+            'error': 'GROQ_API_KEY not configured',
+            'word_analysis': [],
+            'final_sign_sequence': []
+        }), 500
+        
+    available_videos = get_available_videos()
+    # Format available videos as a JSON-like string for the prompt
+    available_videos_str = json.dumps(available_videos)
+    
+    # EXACT SYSTEM PROMPT FROM USER REQUEST
+    system_prompt = f"""
+    You are an AI assistant for a speech-to-sign-language system.
+
+    Your task is to analyze a spoken sentence and map each word to an available
+    sign-language video name using semantic meaning.
+
+    CRITICAL RULES (DO NOT VIOLATE):
+    1. Every word from the original sentence MUST be included in the output.
+    2. If a spoken word maps to ANY available sign (even a synonym), mark it as "available".
+    3. If a spoken word cannot be mapped to any available sign, mapped_sign MUST be null and status MUST be "unavailable".
+    4. Use ONLY the provided video names for mapped_sign values.
+    5. Do NOT invent or infer new signs.
+    6. Ignore filler words semantically, but still include them in the word list and mark them unavailable.
+    7. Build the final sign sequence using ONLY mapped signs in logical sentence order.
+    8. Return output in EXACT JSON format.
+
+    AVAILABLE VIDEOS:
+    {available_videos_str}
+
+    OUTPUT FORMAT EXAMPLE:
+    {{
+      "original_sentence": "mommy i desperately love you",
+      "word_analysis": [
+        {{
+          "spoken_word": "mommy",
+          "mapped_sign": "mom",
+          "status": "available"
+        }},
+        {{
+          "spoken_word": "desperately",
+          "mapped_sign": null,
+          "status": "unavailable"
+        }}
+      ],
+      "final_sign_sequence": ["mom", "i", "love", "you"]
+    }}
+    """
+    
+    try:
+        print(f"Sending text to Groq: {text}")
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Spoken sentence: \"{text}\"\nAvailable sign language video names: {available_videos_str}\nReturn the analysis and sign sequence."}
+            ],
+            "temperature": 0.1, # strict
+            "response_format": {"type": "json_object"} 
+        }
+        
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            print(f"Groq API Error: {response.text}")
+            return jsonify({'error': 'AI processing failed', 'details': response.text}), 500
+            
+        result = response.json()
+        content = result['choices'][0]['message']['content']
+        print(f"Groq Response: {content}")
+        
+        try:
+            parsed_content = json.loads(content)
+            
+            # Backend Validation: Verify video existence for "available" items
+            # This ensures we don't send a "green" status for a file that doesn't exist on disk
+            current_video_dir = os.path.join(os.path.dirname(__file__), 'static', 'video')
+            
+            valid_word_analysis = []
+            valid_sequence = []
+            
+            # Process word analysis
+            if 'word_analysis' in parsed_content:
+                for item in parsed_content['word_analysis']:
+                    spoken_word = item.get('spoken_word', '')
+                    mapped_sign = item.get('mapped_sign')
+                    status = item.get('status', 'unavailable')
+                    
+                    video_url = None
+                    
+                    if mapped_sign and status == 'available':
+                        # Verify file exists
+                        # Case insensitive check
+                        found_file = None
+                        if os.path.exists(current_video_dir):
+                            for f in os.listdir(current_video_dir):
+                                if os.path.splitext(f)[0].lower() == mapped_sign.lower():
+                                    found_file = f
+                                    break
+                        
+                        if found_file:
+                             mapped_sign = os.path.splitext(found_file)[0] # Normalize case
+                             video_url = f"/static/video/{found_file}"
+                        else:
+                            # AI hallucinated a video not in list, or file missing
+                            mapped_sign = None
+                            status = 'unavailable'
+                    
+                    valid_word_analysis.append({
+                        "spoken_word": spoken_word,
+                        "mapped_sign": mapped_sign,
+                        "status": status,
+                        "video_url": video_url
+                    })
+
+            # Re-build sequence from valid mapped signs to be safe, or verify AI's sequence
+            # User said "Build final sign sequence using ONLY mapped signs"
+            # We can trust AI or rebuild. Rebuilding ensures consistency with above validation.
+            valid_sequence = [item['mapped_sign'] for item in valid_word_analysis if item['mapped_sign']]
+            
+            # If the AI provided a sequence that is different (reordered), we might want to respect it?
+            # User said "logical sentence order". 
+            # Let's verify the AI's final_sign_sequence against our validated files.
+            
+            final_sequence_urls = []
+            if 'final_sign_sequence' in parsed_content:
+                 for sign in parsed_content['final_sign_sequence']:
+                      # Find URL for this sign
+                      found_file = None
+                      if os.path.exists(current_video_dir):
+                            for f in os.listdir(current_video_dir):
+                                if os.path.splitext(f)[0].lower() == sign.lower():
+                                    found_file = f
+                                    break
+                      if found_file:
+                          final_sequence_urls.append({
+                              "word": sign, # The sign name
+                              "video_url": f"/static/video/{found_file}"
+                          })
+
+            return jsonify({
+                "original_sentence": parsed_content.get("original_sentence", text),
+                "word_analysis": valid_word_analysis,
+                "final_sign_sequence": final_sequence_urls # Sending objects with URLs for player
+            })
+            
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse AI response: {content} - Error: {e}")
+            return jsonify({'error': 'Invalid AI response format', 'raw_content': content}), 500
+            
+    except Exception as e:
+        print(f"Error processing text: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True)

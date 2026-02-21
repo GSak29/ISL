@@ -189,42 +189,28 @@
                 this.isRecording = false;
                 this.recognition = null;
                 this.currentTranscript = '';
-                this.currentWordIndex = 0;
                 this.wordQueue = [];
-                this.totalWordsTranslated = 0;
-                this.sessionsCompleted = 0;
-                this.isTranslating = false;
-                this.grokApiKey = null;
                 this.isVideoPlaying = false;
 
                 this.initializeElements();
                 this.setupSpeechRecognition();
                 this.setupEventListeners();
-                this.setupDemoAnimations();
-                this.initializeGrokAPI();
             }
 
             initializeElements() {
-                // New UI elements
                 this.startBtn = document.getElementById('start-detection-btn');
                 this.stopBtn = document.getElementById('stop-detection-btn');
                 this.clearBtn = document.getElementById('clear-btn');
-
                 this.statusIndicator = document.getElementById('status-indicator');
                 this.transcript = document.getElementById('transcript');
                 this.videoPlayer = document.getElementById('video-player');
                 this.videoPlaceholder = document.getElementById('video-placeholder');
                 this.spinner = document.getElementById('center-spinner');
-
                 this.progressFill = document.getElementById('progress-fill');
                 this.progressText = document.getElementById('progress-text');
                 this.wordQueueElement = document.getElementById('word-queue');
                 this.chunksPanel = document.getElementById('chunks-panel');
                 this.chunkCount = document.getElementById('chunk-count');
-
-                // Hidden compatibility
-                this.micButton = document.getElementById('mic-button');
-                this.micStatus = document.getElementById('mic-status');
             }
 
             setupSpeechRecognition() {
@@ -232,7 +218,7 @@
                     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                     this.recognition = new SpeechRecognition();
                     this.recognition.continuous = true;
-                    this.recognition.interimResults = true;
+                    this.recognition.interimResults = false; // We only want final results for processing
                     this.recognition.lang = 'en-IN';
 
                     this.recognition.onstart = () => {
@@ -249,9 +235,7 @@
                         }
                         if (finalTranscript) {
                             this.transcript.innerText += ' ' + finalTranscript;
-                            // Small delay to ensure text is processed? No, just call directly.
-                            console.log("Transcript received:", finalTranscript);
-                            this.detectAndPlayWords(finalTranscript);
+                            this.processSpeech(finalTranscript);
                         }
                     };
 
@@ -288,17 +272,19 @@
 
                 this.clearBtn.addEventListener('click', () => {
                     this.transcript.innerText = '';
-                    this.wordQueueElement.innerHTML = '';
-                    this.chunksPanel.innerHTML = '<div class="text-center text-muted mt-5"><small>Waiting for input...</small></div>';
-                    this.chunkCount.innerText = '0';
-                    this.progressFill.style.width = '0%';
-                    this.progressText.innerText = '0/0 words';
-                    this.stopVideo();
                     this.wordQueue = [];
+                    this.updateQueueUI();
+                    this.chunksPanel.innerHTML = '<div class="text-center text-muted mt-5"><small>Waiting for input...</small></div>';
+                    this.stopVideo();
                 });
 
                 this.videoPlayer.addEventListener('ended', () => {
                     this.playNextInQueue();
+                });
+
+                this.videoPlayer.addEventListener('error', (e) => {
+                    console.error("Video error:", e);
+                    this.playNextInQueue(); // Skip to next if error
                 });
             }
 
@@ -321,219 +307,133 @@
                 this.statusIndicator.querySelector('i').className = `fas fa-circle me-2 small`;
             }
 
-            async initializeGrokAPI() {
+            async processSpeech(text) {
+                this.updateStatus('Processing AI...', 'warning');
+
+                // Show loading in chunks panel
+                const loadingId = Date.now();
+                const tempLoading = document.createElement('div');
+                tempLoading.className = 'card mb-2 border-0 shadow-sm';
+                tempLoading.id = `loading-${loadingId}`;
+                tempLoading.innerHTML = `
+                    <div class="card-body p-2 d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                        <small class="text-muted">Analyzing: "${text}"...</small>
+                    </div>
+                `;
+
+                // Remove empty state if present
+                if (this.chunksPanel.querySelector('.text-center')) {
+                    this.chunksPanel.innerHTML = '';
+                }
+                this.chunksPanel.prepend(tempLoading);
+
                 try {
-                    const response = await fetch('/api/grok-key');
-                    if (response.ok) {
-                        const data = await response.json();
-                        this.grokApiKey = data.apiKey;
-                    }
-                } catch (e) { console.error(e); }
-            }
-
-            setupDemoAnimations() {
-                // FIXED: Use Flask static folder structure
-                const baseUrl = window.location.origin;
-                const createVideoUrl = (filename) => `${baseUrl}/static/video/${encodeURIComponent(filename)}`;
-
-                // Add more sophisticated variation handling if needed
-                this.videoAnimations = {
-                    'afternoon': createVideoUrl('AFTERNOON.MOV'),
-                    'bad': createVideoUrl('BAD.MOV'),
-                    'boy': createVideoUrl('BOY.MOV'),
-                    'brother': createVideoUrl('BROTHER.MOV'),
-                    'bye': createVideoUrl('BYE.MOV'),
-                    'child': createVideoUrl('CHILD.MOV'),
-                    'college': createVideoUrl('COLLEGE.MOV'),
-                    'day': createVideoUrl('DAY.MOV'),
-                    'eat': createVideoUrl('EAT.MOV'),
-                    'family': createVideoUrl('FAMILY.MOV'),
-                    'father': createVideoUrl('FATHER.MOV'),
-                    'fine': createVideoUrl('FINE.MOV'),
-                    'food': createVideoUrl('FOOD.MOV'),
-                    'friend': createVideoUrl('FRIEND.MOV'),
-                    'girl': createVideoUrl('GIRL.MOV'),
-                    'good': createVideoUrl('GOOD.MOV'),
-                    'he': createVideoUrl('HE.MOV'),
-                    'hello': createVideoUrl('HELLO.MOV'),
-                    'help': createVideoUrl('HELP.MOV'),
-                    'home': createVideoUrl('HOME.MOV'),
-                    'hospital': createVideoUrl('HOSPITAL.MOV'),
-                    'how': createVideoUrl('HOW.MOV'),
-                    'i': createVideoUrl('I.MOV'),
-                    'indian': createVideoUrl('INDIAN.MOV'),
-                    'language': createVideoUrl('LANGUAGE.MOV'),
-                    'loud': createVideoUrl('LOUD.MOV'),
-                    'man': createVideoUrl('MAN.MOV'),
-                    'market': createVideoUrl('MARKET.MOV'),
-                    'morning': createVideoUrl('MORNING.MOV'),
-                    'mummy': createVideoUrl('MUMMY.MOV'),
-                    'namaste': createVideoUrl('NAMASTE.MOV'),
-                    'name': createVideoUrl('NAME.MOV'),
-                    'night': createVideoUrl('NIGHT.MOV'),
-                    'no': createVideoUrl('NO.MOV'),
-                    'office': createVideoUrl('OFFICE.MOV'),
-                    'place': createVideoUrl('PLACE.MOV'),
-                    'play': createVideoUrl('PLAY.MOV'),
-                    'please': createVideoUrl('PLEASE.MOV'),
-                    'quiet': createVideoUrl('QUIET.MOV'),
-                    'run': createVideoUrl('RUN.MOV'),
-                    'school': createVideoUrl('SCHOOL.MOV'),
-                    'she': createVideoUrl('SHE.MOV'),
-                    'shop': createVideoUrl('SHOP.MOV'),
-                    'sign': createVideoUrl('SIGN.MOV'),
-                    'sit': createVideoUrl('SIT.MOV'),
-                    'sleep': createVideoUrl('SLEEP.MOV'),
-                    'sorry': createVideoUrl('SORRY.MOV'),
-                    'stand': createVideoUrl('STAND.MOV'),
-                    'strong': createVideoUrl('STRONG.MOV'),
-                    'teacher': createVideoUrl('TEACHER.MOV'),
-                    'temple': createVideoUrl('TEMPLE.MOV'),
-                    'thank': createVideoUrl('THANK YOU.MOV'),
-                    'thanks': createVideoUrl('THANK YOU.MOV'), // Added variation
-                    'thank you': createVideoUrl('THANK YOU.MOV'), // Added variation
-                    'they': createVideoUrl('THEY.MOV'),
-                    'time': createVideoUrl('TIME.MOV'),
-                    'today': createVideoUrl('TODAY.MOV'),
-                    'tomorrow': createVideoUrl('TOMORROW.MOV'),
-                    'water': createVideoUrl('WATER.MOV'),
-                    'we': createVideoUrl('WE.MOV'),
-                    'week': createVideoUrl('WEEK.MOV'),
-                    'welcome': createVideoUrl('WELCOME.MOV'),
-                    'woman': createVideoUrl('WOMAN.MOV'),
-                    'year': createVideoUrl('YEAR.MOV'),
-                    'yes': createVideoUrl('YES.MOV'),
-                    'yesterday': createVideoUrl('YESTERDAY.MOV'),
-                    'you': createVideoUrl('YOU.MOV'),
-                    'your': createVideoUrl('YOUR.MOV'),
-                };
-            }
-
-            async detectAndPlayWords(text) {
-                console.log("Analyzing text:", text);
-
-                // 1. Send to AI for processing
-                let textToProcess = text;
-                try {
-                    const response = await fetch('/api/process_speech', {
+                    const response = await fetch('/api/process-text', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
                         body: JSON.stringify({ text: text })
                     });
-                    if (response.ok) {
-                        const data = await response.json();
-                        textToProcess = data.processed;
-                        console.log("AI Processed Text:", textToProcess);
-                        // Optional: Show AI result in UI
-                        this.transcript.innerHTML += `<br><small class="text-primary"><i class="fas fa-robot"></i> ${textToProcess}</small>`;
+
+                    if (!response.ok) throw new Error('Network response was not ok');
+
+                    const data = await response.json();
+
+                    // Remove loading indicator
+                    tempLoading.remove();
+
+                    if (data.word_analysis) {
+                        this.displayWordAnalysis(data.word_analysis);
                     }
-                } catch (e) {
-                    console.error("AI Processing failed:", e);
+
+                    if (data.final_sign_sequence && data.final_sign_sequence.length > 0) {
+                        this.addSequenceToPlaybackQueue(data.final_sign_sequence);
+                    }
+
+                    this.updateStatus('Translation Ready', 'success');
+
+                } catch (error) {
+                    console.error('Error processing speech:', error);
+                    tempLoading.innerHTML = `
+                        <div class="card-body p-2 text-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i> Error processing: "${text}"
+                        </div>
+                    `;
+                    this.updateStatus('Error processing', 'danger');
                 }
 
-                // 2. Process words
-                // Clean punctuation and split
-                const words = textToProcess.toLowerCase()
-                    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-                    .split(/\s+/);
-
-                const foundWords = [];
-                const missingWords = [];
-
-                words.forEach(w => {
-                    const match = this.videoAnimations[w] || this.videoAnimations[w.replace(/[^a-z]/g, '')];
-                    if (match) {
-                        foundWords.push(w);
-                    } else if (w.length > 1) { // Ignore single chars if not found or very short noise
-                        missingWords.push(w);
-                    }
-                });
-
-                // 3. Update UI
-                if (foundWords.length > 0) {
-                    this.wordQueue.push(...foundWords);
-                    if (!this.isVideoPlaying) {
-                        this.playNextInQueue();
-                    }
-                }
-
-                this.updateQueueUI(foundWords, missingWords);
-            }
-
-            updateQueueUI(newFound = [], newMissing = []) {
-                // Main Queue (Pending)
-                this.wordQueueElement.innerHTML = this.wordQueue.map(w =>
-                    `<span class="badge bg-success mb-1">${w}</span>`
-                ).join(' ');
-
-                this.chunkCount.innerText = this.wordQueue.length;
-
-                // Show missing words if any (append to a log or distinct area)
-                if (newMissing.length > 0) {
-                    const missingContainer = document.getElementById('missing-words-log') || this.createMissingContainer();
-
-                    newMissing.forEach(w => {
-                        const span = document.createElement('span');
-                        span.className = 'badge bg-danger me-1 mb-1';
-                        span.innerText = w;
-                        missingContainer.prepend(span); // Newest first
-                    });
+                if (this.isRecording) {
+                    this.updateStatus('Listening...', 'success');
+                } else {
+                    this.updateStatus('Stopped', 'secondary');
                 }
             }
 
-            createMissingContainer() {
-                // Create a container for missing words if it doesn't exist
-                const parent = this.chunksPanel.parentElement;
+            displayWordAnalysis(analysis) {
+                // New logic: Show original words with Green/Red status
+                const chunkDiv = document.createElement('div');
+                chunkDiv.className = 'card mb-2 border-0 shadow-sm slide-in-bottom';
 
-                // Add header if needed
-                if (!document.getElementById('missing-header')) {
-                    const header = document.createElement('div');
-                    header.id = 'missing-header';
-                    header.className = 'card-header bg-white border-0 fw-bold text-uppercase small text-muted border-top mt-3';
-                    header.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i> Animations Not Found';
-                    // Insert after the chunks body
-                    this.chunksPanel.after(header);
+                let wordBadges = analysis.map(item => {
+                    const isAvailable = item.status === 'available';
+                    const badgeClass = isAvailable ? 'bg-success' : 'bg-danger';
+                    const icon = isAvailable ? 'check' : 'times';
+                    // Show original spoken word, maybe tooltip mapped sign
+                    return `<span class="badge ${badgeClass} me-1 mb-1" title="Mapped: ${item.mapped_sign || 'None'}">
+                        ${item.spoken_word} <i class="fas fa-${icon} ms-1" style="font-size: 0.7em;"></i>
+                    </span>`;
+                }).join('');
 
-                    const body = document.createElement('div');
-                    body.id = 'missing-words-log';
-                    body.className = 'card-body overflow-auto bg-light';
-                    body.style.height = '150px';
-                    header.after(body);
-                    return body;
+                chunkDiv.innerHTML = `
+                    <div class="card-body p-3">
+                        <div>${wordBadges}</div>
+                    </div>
+                `;
+
+                this.chunksPanel.prepend(chunkDiv);
+            }
+
+            addSequenceToPlaybackQueue(sequence) {
+                // sequence contains objects with { word, video_url }
+                // Add to main playback queue
+                this.wordQueue.push(...sequence);
+
+                this.updateQueueUI();
+
+                if (!this.isVideoPlaying) {
+                    this.playNextInQueue();
                 }
-                return document.getElementById('missing-words-log');
             }
 
             playNextInQueue() {
-                if (this.wordQueue.length === 0) {
+                // Find next available video
+                let nextItemIndex = this.wordQueue.findIndex(item => item.available && !item.played);
+
+                if (nextItemIndex === -1) {
+                    // No more available videos to play in the queue
+                    // Mark all as played or clear if you want loop? 
+                    // For now, we just stop.
                     this.isVideoPlaying = false;
                     this.stopVideo();
                     return;
                 }
 
                 this.isVideoPlaying = true;
-                const word = this.wordQueue.shift();
+                const item = this.wordQueue[nextItemIndex];
+                item.played = true; // Mark as played
 
-                // Get URL handle variations
-                let url = this.videoAnimations[word];
-                if (!url) url = this.videoAnimations[word.replace(/[^a-z]/g, '')];
+                // Update UI to highlight current word
+                this.updateQueueUI(nextItemIndex); // Pass index relative to queue start? No, queue grows.
 
-                if (url) {
-                    console.log("Playing video for:", word, url);
-                    this.videoPlaceholder.style.display = 'none';
-                    this.videoPlayer.style.display = 'block';
-                    this.videoPlayer.src = url;
-                    this.videoPlayer.play().catch(e => {
-                        console.error("Video play error:", e);
-                        // If error, skip to next
-                        this.playNextInQueue();
-                    });
-                    this.highlightWord(word);
-                } else {
-                    console.warn("No video found for:", word);
+                this.videoPlaceholder.style.display = 'none';
+                this.videoPlayer.style.display = 'block';
+                this.videoPlayer.src = item.video_url;
+                this.videoPlayer.play().catch(e => {
+                    console.error("Play error", e);
                     this.playNextInQueue();
-                }
-                this.updateQueueUI();
+                });
             }
 
             stopVideo() {
@@ -542,14 +442,44 @@
                 this.videoPlaceholder.style.display = 'block';
             }
 
-            updateQueueUI() {
-                // Simplified queue update
-                this.wordQueueElement.innerHTML = this.wordQueue.map(w => `<span class="badge bg-secondary">${w}</span>`).join(' ');
-                this.chunkCount.innerText = this.wordQueue.length;
-            }
+            updateQueueUI(activeIndex = -1) {
+                // Main visual queue (side card in original request, but user asked for "queued words mark")
+                // We'll update the word-queue container
 
-            highlightWord(word) {
-                // Visual feedback logic if needed
+                // Filter out fully played items if queue gets too long? 
+                // For now, keep them but maybe dim them.
+
+                this.wordQueueElement.innerHTML = this.wordQueue.map((item, index) => {
+                    let badgeClass = item.available ? 'bg-primary' : 'bg-secondary';
+                    let opacity = '1';
+                    let border = '';
+
+                    if (item.played && index !== activeIndex) {
+                        badgeClass = item.available ? 'bg-success' : 'bg-secondary';
+                        opacity = '0.6';
+                    }
+
+                    if (index === activeIndex) {
+                        border = 'border: 2px solid #ffc107; box-shadow: 0 0 5px #ffc107;';
+                        opacity = '1';
+                        badgeClass = 'bg-primary';
+                    }
+
+                    if (!item.available) {
+                        opacity = '0.5';
+                        badgeClass = 'bg-danger';
+                    }
+
+                    return `<span class="badge ${badgeClass} mb-1" style="opacity: ${opacity}; ${border}">
+                        ${item.word}
+                    </span>`;
+                }).join(' ');
+
+                // Update counts
+                this.chunkCount.innerText = this.wordQueue.length;
+                const playedCount = this.wordQueue.filter(i => i.played).length;
+                this.progressText.innerText = `${playedCount}/${this.wordQueue.length} played`;
+                this.progressFill.style.width = this.wordQueue.length > 0 ? `${(playedCount / this.wordQueue.length) * 100}%` : '0%';
             }
         }
 
